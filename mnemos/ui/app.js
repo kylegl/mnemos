@@ -57,8 +57,6 @@ function fillForm(view) {
   document.getElementById("embedding-model").value = settings.embedding?.model || "";
   document.getElementById("store-type").value = settings.storage?.type || "sqlite";
   document.getElementById("sqlite-path").value = settings.storage?.sqlite_path || "";
-  document.getElementById("qdrant-path").value = settings.storage?.qdrant_path || "";
-  document.getElementById("qdrant-url").value = settings.storage?.qdrant_url || "";
   refreshProviderFields();
 
   const heroStatus = document.getElementById("hero-status");
@@ -87,8 +85,6 @@ function collectPayload() {
     storage: {
       type: document.getElementById("store-type").value,
       sqlite_path: document.getElementById("sqlite-path").value.trim(),
-      qdrant_path: document.getElementById("qdrant-path").value.trim() || null,
-      qdrant_url: document.getElementById("qdrant-url").value.trim() || null,
     },
     providers: {
       [provider]: {
