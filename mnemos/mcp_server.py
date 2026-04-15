@@ -30,7 +30,7 @@ Usage:
 
 Configuration via environment variables:
   MNEMOS_CONFIG_PATH    — Canonical global config path (optional; host configs should prefer this)
-  MNEMOS_LLM_PROVIDER   — "mock" (default), "ollama", "openai", "openclaw", or "openrouter"
+  MNEMOS_LLM_PROVIDER   — "mock" (default), "ollama", "openai", "openclaw", "openrouter", or "multicodex"
   MNEMOS_LLM_MODEL      — Model name for LLM provider (default: "llama3")
   MNEMOS_EMBEDDING_PROVIDER — "simple" (default), "ollama", "openai", "openclaw", or "openrouter"
   MNEMOS_EMBEDDING_MODEL — Embedding model name (provider-specific default if unset)
@@ -42,6 +42,10 @@ Configuration via environment variables:
   MNEMOS_OPENCLAW_URL   — OpenClaw API base URL (or fallback to MNEMOS_OPENAI_URL)
   MNEMOS_OPENROUTER_API_KEY — OpenRouter API key (required if provider is "openrouter")
   MNEMOS_OPENROUTER_URL — OpenRouter API base URL (default: "https://openrouter.ai/api/v1")
+  MNEMOS_MULTICODEX_STATE_FILE — MultiCodex shared OAuth state file (default: "~/.pi/agent/multicodex.json")
+  MNEMOS_MULTICODEX_URL — MultiCodex Codex API base URL (default: "https://chatgpt.com/backend-api")
+  MNEMOS_MULTICODEX_REFRESH_CMD — Optional token refresh command bridge for MultiCodex accounts
+  MNEMOS_MULTICODEX_QUOTA_COOLDOWN_SECONDS — Account cooldown after HTTP 429 (default: 1800)
   MNEMOS_STORE_TYPE     — "memory" (default) or "sqlite"
   MNEMOS_SQLITE_PATH    — Path for SQLite store (default: "mnemos_memory.db")
   MNEMOS_STORAGE        — Alias for MNEMOS_STORE_TYPE

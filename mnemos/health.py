@@ -8,10 +8,11 @@ import importlib.util
 import json
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
+from .oauth.multicodex_state import MultiCodexStateStore
 from .settings import load_settings
 
 
@@ -253,6 +254,49 @@ def run_health_checks(
                 "fail",
                 "MNEMOS_OPENROUTER_API_KEY is required for openrouter provider.",
             )
+    elif llm_provider == "multicodex":
+        multicodex_settings = settings.providers.multicodex
+        state_file = Path(multicodex_settings.state_file).expanduser()
+        state_store = MultiCodexStateStore(state_file)
+        if not state_file.exists():
+            add_check(
+                "llm.multicodex.state_file",
+                "fail",
+                f"MultiCodex state file not found: {state_file}",
+            )
+        else:
+            try:
+                state = state_store.load()
+            except Exception as exc:
+                add_check(
+                    "llm.multicodex.state_file",
+                    "fail",
+                    f"Failed to parse MultiCodex state file: {exc}",
+                )
+            else:
+                if not state.accounts:
+                    add_check(
+                        "llm.multicodex.accounts",
+                        "fail",
+                        "MultiCodex state file contains no accounts.",
+                    )
+                else:
+                    add_check(
+                        "llm.multicodex.accounts",
+                        "pass",
+                        f"MultiCodex provider ready with {len(state.accounts)} account(s).",
+                    )
+                    if not multicodex_settings.refresh_cmd:
+                        near_expiry = datetime.now(timezone.utc) + timedelta(minutes=5)
+                        if any(
+                            account.expiresAt is not None and account.expiresAt <= near_expiry
+                            for account in state.accounts
+                        ):
+                            add_check(
+                                "llm.multicodex.refresh",
+                                "warn",
+                                "MultiCodex refresh command is unset and at least one token expires within 5 minutes.",
+                            )
     else:
         add_check("llm.provider", "fail", f"Unsupported MNEMOS_LLM_PROVIDER: {llm_provider!r}")
 
@@ -382,7 +426,7 @@ def run_health_checks(
     recommendations: list[str] = []
     if llm_provider == "mock":
         recommendations.append(
-            "Set MNEMOS_LLM_PROVIDER=openclaw (or openai/ollama) to enable non-mock cognition."
+            "Set MNEMOS_LLM_PROVIDER=openclaw/openai/ollama/multicodex to enable non-mock cognition."
         )
     if embedding_provider == "simple":
         recommendations.append(

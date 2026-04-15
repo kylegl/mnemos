@@ -18,7 +18,7 @@ from .utils.embeddings import (
     OpenAIEmbeddingProvider,
     SimpleEmbeddingProvider,
 )
-from .utils.llm import LLMProvider, MockLLMProvider, OllamaProvider, OpenAIProvider
+from .utils.llm import LLMProvider, MockLLMProvider, MultiCodexProvider, OllamaProvider, OpenAIProvider
 from .utils.storage import InMemoryStore, MemoryStore, SQLiteStore
 
 
@@ -147,9 +147,19 @@ def build_llm_from_settings(settings: AppSettings) -> LLMProvider:
             model=settings.llm.model or "gpt-4o-mini",
         )
 
+    if provider == "multicodex":
+        multicodex_settings = settings.providers.multicodex
+        return MultiCodexProvider(
+            model=settings.llm.model or "gpt-5.2",
+            base_url=settings.base_url_for("multicodex") or "https://chatgpt.com/backend-api",
+            state_file=multicodex_settings.state_file,
+            refresh_cmd=multicodex_settings.refresh_cmd,
+            quota_cooldown_seconds=multicodex_settings.quota_cooldown_seconds,
+        )
+
     raise ValueError(
         f"Unknown LLM provider: {provider!r}. "
-        "Use 'mock', 'ollama', 'openai', 'openclaw', or 'openrouter'."
+        "Use 'mock', 'ollama', 'openai', 'openclaw', 'openrouter', or 'multicodex'."
     )
 
 

@@ -23,8 +23,10 @@ from typing import Any
 
 import httpx
 
+from ..oauth.account_manager import MultiCodexAccountManager
+from ..oauth.multicodex_state import MultiCodexAccount
 from ..observability import log_event
-from .reliability import MnemosConfigurationError, RetryPolicy, call_with_async_retry
+from .reliability import MnemosConfigurationError, MnemosError, RetryPolicy, call_with_async_retry
 
 
 def _provider_name_from_base_url(base_url: str) -> str:
@@ -34,6 +36,12 @@ def _provider_name_from_base_url(base_url: str) -> str:
     if "openclaw" in lower:
         return "openclaw"
     return "openai"
+
+
+class _MultiCodexHTTPStatus(MnemosError):
+    def __init__(self, status_code: int, message: str) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class LLMProvider(ABC):
@@ -472,6 +480,227 @@ class OpenAIProvider(LLMProvider):
             f"Text: {prompt}\n"
             f"Labels: {label_list}\n"
             f'Reply ONLY with JSON: {{"label": score}}'
+        )
+
+        try:
+            result = await self.predict(classify_prompt)
+            json_match = re.search(r"\{[^}]+\}", result, re.DOTALL)
+            if json_match:
+                scores = json.loads(json_match.group())
+                return {label: float(scores.get(label, 0.0)) for label in labels}
+        except Exception:
+            pass
+
+        weight = 1.0 / len(labels) if labels else 0.0
+        return {label: weight for label in labels}
+
+
+class MultiCodexProvider(LLMProvider):
+    """OpenAI-compatible provider backed by shared MultiCodex OAuth account state."""
+
+    def __init__(
+        self,
+        *,
+        model: str = "gpt-5.2",
+        base_url: str = "https://chatgpt.com/backend-api",
+        timeout: float = 30.0,
+        temperature: float = 0.1,
+        max_tokens: int = 512,
+        system_prompt: str | None = None,
+        account_manager: MultiCodexAccountManager | None = None,
+        state_file: str | None = None,
+        refresh_cmd: str | None = None,
+        quota_cooldown_seconds: int = 1800,
+    ) -> None:
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.system_prompt = system_prompt or (
+            "You are a helpful AI assistant with expertise in memory management and information synthesis."
+        )
+        self.quota_cooldown_seconds = quota_cooldown_seconds
+        self.account_manager = account_manager or MultiCodexAccountManager(
+            state_file=state_file,
+            refresh_cmd=refresh_cmd,
+            quota_cooldown_seconds=quota_cooldown_seconds,
+        )
+
+    def _headers(self, account: MultiCodexAccount) -> dict[str, str]:
+        headers = {
+            "Authorization": f"Bearer {account.accessToken}",
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+            "OpenAI-Beta": "responses=experimental",
+            "originator": "pi",
+        }
+        if account.accountId:
+            headers["chatgpt-account-id"] = account.accountId
+        return headers
+
+    def _codex_url(self) -> str:
+        base = self.base_url.rstrip("/")
+        if base.endswith("/codex/responses"):
+            return base
+        if base.endswith("/codex"):
+            return f"{base}/responses"
+        return f"{base}/codex/responses"
+
+    def _extract_text_from_sse(self, body: str) -> str:
+        text_parts: list[str] = []
+        for line in body.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("data:"):
+                continue
+            payload = stripped[5:].strip()
+            if not payload or payload == "[DONE]":
+                continue
+            try:
+                event = json.loads(payload)
+            except Exception:
+                continue
+            if not isinstance(event, dict):
+                continue
+            event_type = event.get("type")
+            if event_type == "response.output_text.delta":
+                delta = event.get("delta")
+                if isinstance(delta, str):
+                    text_parts.append(delta)
+            elif event_type == "response.output_text.done":
+                done_text = event.get("text")
+                if isinstance(done_text, str) and not text_parts:
+                    text_parts.append(done_text)
+            elif event_type in {"response.failed", "error"}:
+                message = event.get("message")
+                if not isinstance(message, str):
+                    message = payload
+                raise RuntimeError(f"multicodex codex response failed: {message}")
+
+        content = "".join(text_parts).strip()
+        if content:
+            return content
+        raise RuntimeError("multicodex codex response contained no output text")
+
+    async def _predict_with_account(
+        self,
+        *,
+        account: MultiCodexAccount,
+        payload: dict[str, Any],
+    ) -> str:
+        headers = self._headers(account)
+
+        async def _request() -> str:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    self._codex_url(),
+                    json=payload,
+                    headers=headers,
+                )
+                status = response.status_code
+                if status in {401, 403, 429}:
+                    raise _MultiCodexHTTPStatus(status, f"multicodex predict failed with status {status}")
+                response.raise_for_status()
+                body = response.text
+                content = self._extract_text_from_sse(body)
+                return content.strip()
+
+        return await call_with_async_retry(
+            provider="multicodex",
+            operation="predict",
+            fn=_request,
+            policy=RetryPolicy(),
+        )
+
+    async def predict(self, prompt: str, **kwargs: Any) -> str:
+        _ = kwargs.get("temperature", self.temperature)
+        _ = kwargs.get("max_tokens", self.max_tokens)
+        model = kwargs.get("model", self.model)
+        payload: dict[str, Any] = {
+            "model": model,
+            "store": False,
+            "stream": True,
+            "instructions": self.system_prompt,
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": prompt,
+                        }
+                    ],
+                }
+            ],
+            "text": {"verbosity": "low"},
+            "include": ["reasoning.encrypted_content"],
+            "tool_choice": "auto",
+            "parallel_tool_calls": True,
+        }
+
+        excluded: set[str] = set()
+        auth_retry_used = False
+        quota_retry_used = False
+        provider_name = "multicodex"
+
+        while True:
+            account = await self.account_manager.resolve_account(exclude_emails=excluded)
+            try:
+                return await self._predict_with_account(account=account, payload=payload)
+            except _MultiCodexHTTPStatus as exc:
+                if exc.status_code in {401, 403} and not auth_retry_used:
+                    auth_retry_used = True
+                    refreshed = await self.account_manager.force_refresh(account.email)
+                    if refreshed is not None:
+                        try:
+                            return await self._predict_with_account(
+                                account=refreshed,
+                                payload=payload,
+                            )
+                        except Exception as retry_exc:
+                            log_event(
+                                "mnemos.provider_failure",
+                                level=logging.ERROR,
+                                provider=provider_name,
+                                operation="predict",
+                                error=str(retry_exc),
+                            )
+                            raise
+
+                if exc.status_code == 429 and not quota_retry_used:
+                    quota_retry_used = True
+                    await self.account_manager.mark_quota_exhausted(
+                        account.email,
+                        cooldown_seconds=self.quota_cooldown_seconds,
+                    )
+                    excluded.add(account.email)
+                    continue
+
+                log_event(
+                    "mnemos.provider_failure",
+                    level=logging.ERROR,
+                    provider=provider_name,
+                    operation="predict",
+                    error=str(exc),
+                )
+                raise
+            except Exception as exc:
+                log_event(
+                    "mnemos.provider_failure",
+                    level=logging.ERROR,
+                    provider=provider_name,
+                    operation="predict",
+                    error=str(exc),
+                )
+                raise
+
+    async def classify(self, prompt: str, labels: list[str]) -> dict[str, float]:
+        label_list = ", ".join(f'"{label}"' for label in labels)
+        classify_prompt = (
+            "Rate the relevance of each label to this text on a scale of 0.0 to 1.0.\n"
+            f"Text: {prompt}\n"
+            f"Labels: {label_list}\n"
+            'Reply ONLY with JSON: {"label": score}'
         )
 
         try:

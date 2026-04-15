@@ -287,6 +287,29 @@ def _env_overrides(env: Mapping[str, str]) -> dict[str, Any]:
     if openrouter_url is not None:
         _set_nested(overrides, ("providers", "openrouter", "base_url"), openrouter_url)
 
+    multicodex_state_file = _env_value(env, "MNEMOS_MULTICODEX_STATE_FILE")
+    if multicodex_state_file is not None:
+        _set_nested(overrides, ("providers", "multicodex", "state_file"), multicodex_state_file)
+
+    multicodex_url = _env_value(env, "MNEMOS_MULTICODEX_URL")
+    if multicodex_url is not None:
+        _set_nested(overrides, ("providers", "multicodex", "base_url"), multicodex_url)
+
+    multicodex_refresh_cmd = _env_value(env, "MNEMOS_MULTICODEX_REFRESH_CMD")
+    if multicodex_refresh_cmd is not None:
+        _set_nested(overrides, ("providers", "multicodex", "refresh_cmd"), multicodex_refresh_cmd)
+
+    multicodex_quota_cooldown_seconds = _env_int(
+        env,
+        "MNEMOS_MULTICODEX_QUOTA_COOLDOWN_SECONDS",
+    )
+    if multicodex_quota_cooldown_seconds is not None:
+        _set_nested(
+            overrides,
+            ("providers", "multicodex", "quota_cooldown_seconds"),
+            multicodex_quota_cooldown_seconds,
+        )
+
     surprisal_threshold = _env_float(env, "MNEMOS_SURPRISAL_THRESHOLD")
     if surprisal_threshold is not None:
         _set_nested(overrides, ("runtime", "surprisal_threshold"), surprisal_threshold)
@@ -327,6 +350,8 @@ def _default_llm_model(provider: str) -> str | None:
         return "llama3"
     if provider in {"openai", "openclaw", "openrouter"}:
         return "gpt-4o-mini"
+    if provider == "multicodex":
+        return "gpt-5.2"
     return None
 
 
@@ -351,6 +376,15 @@ class OllamaProviderSettings(BaseModel):
     base_url: str = "http://localhost:11434"
 
 
+class MultiCodexProviderSettings(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    state_file: str = "~/.pi/agent/multicodex.json"
+    base_url: str = "https://chatgpt.com/backend-api"
+    refresh_cmd: str | None = None
+    quota_cooldown_seconds: int = 1800
+
+
 class ProvidersSettings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -370,12 +404,13 @@ class ProvidersSettings(BaseModel):
         )
     )
     ollama: OllamaProviderSettings = Field(default_factory=OllamaProviderSettings)
+    multicodex: MultiCodexProviderSettings = Field(default_factory=MultiCodexProviderSettings)
 
 
 class LLMSettings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    provider: Literal["mock", "ollama", "openai", "openclaw", "openrouter"] = "mock"
+    provider: Literal["mock", "ollama", "openai", "openclaw", "openrouter", "multicodex"] = "mock"
     model: str | None = None
 
 
@@ -458,6 +493,8 @@ class AppSettings(BaseModel):
             return self.providers.openrouter.base_url
         if provider == "ollama":
             return self.providers.ollama.base_url
+        if provider == "multicodex":
+            return self.providers.multicodex.base_url
         return None
 
 

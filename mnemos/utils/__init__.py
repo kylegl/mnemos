@@ -10,7 +10,7 @@ from .embeddings import (
     cosine_distance,
     cosine_similarity,
 )
-from .llm import LLMProvider, MockLLMProvider, OllamaProvider, OpenAIProvider
+from .llm import LLMProvider, MockLLMProvider, MultiCodexProvider, OllamaProvider, OpenAIProvider
 from .reliability import (
     MnemosConfigurationError,
     MnemosError,
@@ -33,6 +33,7 @@ __all__ = [
     "MockLLMProvider",
     "OllamaProvider",
     "OpenAIProvider",
+    "MultiCodexProvider",
     # Reliability
     "MnemosError",
     "MnemosConfigurationError",
