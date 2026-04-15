@@ -769,11 +769,10 @@ class SQLiteStore(MemoryStore):
                     """
                     SELECT rowid, distance
                     FROM memory_vec
-                    WHERE embedding MATCH ?
+                    WHERE embedding MATCH ? AND k = ?
                     ORDER BY distance
-                    LIMIT ?
                     """,
-                    (self._serialize_vec(query_embedding), top_k),
+                    (self._serialize_vec(query_embedding), int(top_k)),
                 ).fetchall()
                 ordered_rows = []
                 for rowid, _distance in rows:
