@@ -528,6 +528,12 @@ def load_settings(
         explicit_config or global_config_path or default_global_config_path()
     ).expanduser()
 
+    allow_project_config = True
+    if explicit_config is not None:
+        # When the user pins an explicit config path, avoid implicitly merging
+        # project-local `.mnemos/mnemos.toml` unless explicitly opted in.
+        allow_project_config = _env_bool(source_env, "MNEMOS_ALLOW_PROJECT_CONFIG") or False
+
     merged: dict[str, Any] = AppSettings(
         storage=StorageSettings(type=default_store_type)
     ).model_dump(mode="python")
@@ -537,7 +543,7 @@ def load_settings(
     if resolved_global_path.exists():
         merged = _deep_merge(merged, _read_toml_file(resolved_global_path))
 
-    project_config_path = find_project_config_path(cwd)
+    project_config_path = find_project_config_path(cwd) if allow_project_config else None
     if project_config_path is not None:
         project_raw = _read_toml_file(project_config_path)
         project_sanitized = _strip_global_only_sections(project_raw, warnings=warnings)
