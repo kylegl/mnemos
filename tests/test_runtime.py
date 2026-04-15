@@ -9,12 +9,18 @@ from pathlib import Path
 import pytest
 
 import mnemos.runtime as runtime_module
-from mnemos.runtime import build_embedder_from_env, build_store_from_env, resolve_env_value
+from mnemos.runtime import (
+    build_embedder_from_env,
+    build_llm_from_env,
+    build_store_from_env,
+    resolve_env_value,
+)
 from mnemos.utils import (
     OllamaEmbeddingProvider,
     OpenAIEmbeddingProvider,
     SimpleEmbeddingProvider,
     SQLiteStore,
+    MultiCodexProvider,
 )
 
 
@@ -127,6 +133,17 @@ def test_build_embedder_from_env_infers_ollama_from_llm_provider(
     embedder = build_embedder_from_env(default_provider="simple")
 
     assert isinstance(embedder, OllamaEmbeddingProvider)
+
+
+def test_build_llm_from_env_multicodex(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("MNEMOS_LLM_PROVIDER", "multicodex")
+    monkeypatch.setenv("MNEMOS_MULTICODEX_STATE_FILE", str(tmp_path / "multicodex.json"))
+    monkeypatch.setenv("MNEMOS_MULTICODEX_URL", "https://chatgpt.com/backend-api")
+
+    provider = build_llm_from_env()
+
+    assert isinstance(provider, MultiCodexProvider)
+    assert provider.base_url == "https://chatgpt.com/backend-api"
 
 
 def test_build_store_from_env_rejects_legacy_store_types(

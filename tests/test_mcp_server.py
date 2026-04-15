@@ -21,7 +21,7 @@ from mnemos.mcp_server import (
     _build_store,
     _format_startup_error,
 )
-from mnemos.utils import OpenAIEmbeddingProvider, OpenAIProvider, SQLiteStore
+from mnemos.utils import MultiCodexProvider, OpenAIEmbeddingProvider, OpenAIProvider, SQLiteStore
 
 
 def test_mcp_build_store_supports_alias_vars(
@@ -57,6 +57,17 @@ def test_mcp_build_llm_provider_openclaw(monkeypatch: pytest.MonkeyPatch) -> Non
     assert llm.api_key == "claw-key"
     assert llm.base_url == "https://api.openclaw.example/v1"
     assert llm.model == "openclaw/claude"
+
+
+def test_mcp_build_llm_provider_multicodex(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("MNEMOS_LLM_PROVIDER", "multicodex")
+    monkeypatch.setenv("MNEMOS_MULTICODEX_STATE_FILE", str(tmp_path / "multicodex.json"))
+    monkeypatch.setenv("MNEMOS_MULTICODEX_URL", "https://chatgpt.com/backend-api")
+
+    llm = _build_llm_provider()
+
+    assert isinstance(llm, MultiCodexProvider)
+    assert llm.base_url == "https://chatgpt.com/backend-api"
 
 
 def test_mcp_build_embedder_infers_openclaw(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -108,10 +119,14 @@ base_url = "https://openrouter.ai/api/v1"
 """.strip(),
         encoding="utf-8",
     )
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("MNEMOS_CONFIG_PATH", str(config_path))
     monkeypatch.delenv("MNEMOS_LLM_PROVIDER", raising=False)
     monkeypatch.delenv("MNEMOS_EMBEDDING_PROVIDER", raising=False)
     monkeypatch.delenv("MNEMOS_STORE_TYPE", raising=False)
+    monkeypatch.delenv("MNEMOS_STORAGE", raising=False)
+    monkeypatch.delenv("MNEMOS_SQLITE_PATH", raising=False)
+    monkeypatch.delenv("MNEMOS_DB_PATH", raising=False)
 
     llm = _build_llm_provider()
     embedder = _build_embedder()
@@ -136,7 +151,12 @@ type = "neo4j"
 """.strip(),
         encoding="utf-8",
     )
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("MNEMOS_CONFIG_PATH", str(config_path))
+    monkeypatch.delenv("MNEMOS_STORE_TYPE", raising=False)
+    monkeypatch.delenv("MNEMOS_STORAGE", raising=False)
+    monkeypatch.delenv("MNEMOS_SQLITE_PATH", raising=False)
+    monkeypatch.delenv("MNEMOS_DB_PATH", raising=False)
 
     with pytest.raises(ValidationError) as exc_info:
         _build_config()

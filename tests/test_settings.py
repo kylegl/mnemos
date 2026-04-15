@@ -400,6 +400,26 @@ MNEMOS_CONFIG_PATH = "{config_path.as_posix()}"
     assert "codex" in imported.sources
 
 
+def test_load_settings_accepts_multicodex_provider_and_env_overrides(tmp_path: Path) -> None:
+    resolved = load_settings(
+        env={
+            "MNEMOS_LLM_PROVIDER": "multicodex",
+            "MNEMOS_MULTICODEX_STATE_FILE": str(tmp_path / "multicodex.json"),
+            "MNEMOS_MULTICODEX_URL": "https://chatgpt.com/backend-api",
+            "MNEMOS_MULTICODEX_REFRESH_CMD": "refresh-helper --json",
+            "MNEMOS_MULTICODEX_QUOTA_COOLDOWN_SECONDS": "900",
+        },
+        cwd=tmp_path,
+    )
+
+    assert resolved.settings.llm.provider == "multicodex"
+    assert resolved.settings.llm.model == "gpt-5.2"
+    assert resolved.settings.providers.multicodex.state_file == str(tmp_path / "multicodex.json")
+    assert resolved.settings.providers.multicodex.base_url == "https://chatgpt.com/backend-api"
+    assert resolved.settings.providers.multicodex.refresh_cmd == "refresh-helper --json"
+    assert resolved.settings.providers.multicodex.quota_cooldown_seconds == 900
+
+
 def test_import_existing_setup_reads_cursor_config_path_for_sqlite(tmp_path: Path) -> None:
     repo_dir = tmp_path / "repo"
     repo_dir.mkdir(parents=True)

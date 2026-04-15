@@ -4,6 +4,7 @@ tests/test_health.py — Readiness and profile checks for production onboarding.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -190,6 +191,59 @@ base_url = "https://openrouter.ai/api/v1"
     assert report["llm_provider"] == "openrouter"
     assert report["embedding_provider"] == "openrouter"
     assert report["store_type"] == "sqlite"
+
+
+def test_health_reports_multicodex_not_ready_without_accounts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    state_path = tmp_path / "multicodex.json"
+    state_path.write_text(
+        json.dumps({"schemaVersion": 1, "accounts": [], "activeEmail": None}),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("MNEMOS_STORE_TYPE", "sqlite")
+    monkeypatch.setenv("MNEMOS_LLM_PROVIDER", "multicodex")
+    monkeypatch.setenv("MNEMOS_MULTICODEX_STATE_FILE", str(state_path))
+    monkeypatch.setenv("MNEMOS_EMBEDDING_PROVIDER", "simple")
+
+    report = run_health_checks()
+
+    assert report["status"] == "not_ready"
+    assert any(check["name"] == "llm.multicodex.accounts" for check in report["checks"])
+
+
+def test_health_reports_multicodex_ready_with_accounts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    state_path = tmp_path / "multicodex.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "activeEmail": "a@example.com",
+                "accounts": [
+                    {
+                        "email": "a@example.com",
+                        "accessToken": "token-a",
+                        "refreshToken": "refresh-a",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("MNEMOS_STORE_TYPE", "sqlite")
+    monkeypatch.setenv("MNEMOS_LLM_PROVIDER", "multicodex")
+    monkeypatch.setenv("MNEMOS_MULTICODEX_STATE_FILE", str(state_path))
+    monkeypatch.setenv("MNEMOS_MULTICODEX_REFRESH_CMD", "refresh-helper --json")
+    monkeypatch.setenv("MNEMOS_EMBEDDING_PROVIDER", "simple")
+
+    report = run_health_checks()
+
+    assert report["status"] == "degraded"
+    assert any(check["name"] == "llm.multicodex.accounts" and check["status"] == "pass" for check in report["checks"])
 
 
 def test_health_reports_single_local_backend_story(
