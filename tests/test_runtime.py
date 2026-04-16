@@ -5,6 +5,7 @@ tests/test_runtime.py — Tests for runtime env configuration helpers.
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pytest
 
@@ -17,6 +18,7 @@ from mnemos.runtime import (
 )
 from mnemos.utils import (
     OllamaEmbeddingProvider,
+    OllamaProvider,
     OpenAIEmbeddingProvider,
     SimpleEmbeddingProvider,
     SQLiteStore,
@@ -144,6 +146,226 @@ def test_build_llm_from_env_multicodex(monkeypatch: pytest.MonkeyPatch, tmp_path
 
     assert isinstance(provider, MultiCodexProvider)
     assert provider.base_url == "https://chatgpt.com/backend-api"
+
+
+@pytest.mark.parametrize(
+    ("base_url", "expected"),
+    [
+        ("http://localhost:11434", True),
+        ("http://127.0.0.1:11434", True),
+        ("http://[::1]:11434", True),
+        ("http://0.0.0.0:11434", True),
+        ("http://10.0.0.5:11434", False),
+        ("https://ollama.internal:11434", False),
+        ("http:///no-host", False),
+    ],
+)
+def test_is_local_ollama_url_matrix(base_url: str, expected: bool) -> None:
+    assert runtime_module._is_local_ollama_url(base_url) is expected
+
+
+def test_build_embedder_from_env_attempts_local_ollama_autostart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MNEMOS_EMBEDDING_PROVIDER", "ollama")
+    monkeypatch.setenv("MNEMOS_OLLAMA_URL", "http://127.0.0.1:11434")
+
+    ready_checks: list[tuple[str, float]] = []
+    popen_calls: list[tuple[list[str], dict[str, str] | None]] = []
+
+    def fake_tcp_ready(base_url: str, *, timeout: float = 0.2) -> bool:
+        ready_checks.append((base_url, timeout))
+        return False
+
+    class _DummyPopen:
+        def __init__(self, args: list[str], env: dict[str, str] | None) -> None:
+            popen_calls.append((args, env))
+
+    def fake_popen(args: list[str], **kwargs: object) -> _DummyPopen:
+        env = kwargs.get("env")
+        assert env is None or isinstance(env, dict)
+        return _DummyPopen(args, env)
+
+    monkeypatch.setattr(runtime_module, "_ollama_tcp_ready", fake_tcp_ready)
+    monkeypatch.setattr(runtime_module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(runtime_module.time, "sleep", lambda _seconds: None)
+    monotonic_state = {"now": 0.0}
+
+    def fake_monotonic() -> float:
+        monotonic_state["now"] += 0.5
+        return monotonic_state["now"]
+
+    monkeypatch.setattr(runtime_module.time, "monotonic", fake_monotonic)
+
+    embedder = build_embedder_from_env(default_provider="simple")
+
+    assert isinstance(embedder, OllamaEmbeddingProvider)
+    assert ready_checks, "expected local readiness checks"
+    assert popen_calls, "expected autostart attempt"
+    args, env = popen_calls[0]
+    assert args == ["ollama", "serve"]
+    assert env is not None
+    assert env.get("OLLAMA_HOST") == "http://127.0.0.1:11434"
+
+
+def test_build_embedder_from_env_does_not_autostart_remote_ollama(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MNEMOS_EMBEDDING_PROVIDER", "ollama")
+    monkeypatch.setenv("MNEMOS_OLLAMA_URL", "http://10.0.0.5:11434")
+
+    popen_called = {"value": False}
+
+    def fail_popen(*_args: object, **_kwargs: object) -> None:
+        popen_called["value"] = True
+        raise AssertionError("autostart should not run for non-local ollama URLs")
+
+    monkeypatch.setattr(runtime_module.subprocess, "Popen", fail_popen)
+
+    embedder = build_embedder_from_env(default_provider="simple")
+
+    assert isinstance(embedder, OllamaEmbeddingProvider)
+    assert not popen_called["value"]
+
+
+def test_build_embedder_from_env_localhost_ollama_uses_local_autostart_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MNEMOS_EMBEDDING_PROVIDER", "ollama")
+    monkeypatch.setenv("MNEMOS_OLLAMA_URL", "http://localhost:11434")
+
+    checks: list[str] = []
+
+    def fake_tcp_ready(base_url: str, *, timeout: float = 0.2) -> bool:
+        host = urlparse(base_url).hostname or ""
+        checks.append(host)
+        return True
+
+    monkeypatch.setattr(runtime_module, "_ollama_tcp_ready", fake_tcp_ready)
+
+    embedder = build_embedder_from_env(default_provider="simple")
+
+    assert isinstance(embedder, OllamaEmbeddingProvider)
+    assert checks == ["localhost"]
+
+
+def test_build_embedder_from_env_does_not_spawn_when_local_ollama_is_ready(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MNEMOS_EMBEDDING_PROVIDER", "ollama")
+    monkeypatch.setenv("MNEMOS_OLLAMA_URL", "http://127.0.0.1:11434")
+
+    popen_called = {"value": False}
+
+    def fake_ready(_base_url: str, *, timeout: float = 0.2) -> bool:
+        return True
+
+    def fail_popen(*_args: object, **_kwargs: object) -> None:
+        popen_called["value"] = True
+        raise AssertionError("autostart should not run when local ollama is already ready")
+
+    monkeypatch.setattr(runtime_module, "_ollama_tcp_ready", fake_ready)
+    monkeypatch.setattr(runtime_module.subprocess, "Popen", fail_popen)
+
+    embedder = build_embedder_from_env(default_provider="simple")
+
+    assert isinstance(embedder, OllamaEmbeddingProvider)
+    assert not popen_called["value"]
+
+
+def test_build_embedder_from_env_tolerates_popen_oserror(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MNEMOS_EMBEDDING_PROVIDER", "ollama")
+    monkeypatch.setenv("MNEMOS_OLLAMA_URL", "http://127.0.0.1:11434")
+
+    def fake_ready(_base_url: str, *, timeout: float = 0.2) -> bool:
+        return False
+
+    def raise_oserror(*_args: object, **_kwargs: object) -> None:
+        raise OSError("ollama binary not found")
+
+    monkeypatch.setattr(runtime_module, "_ollama_tcp_ready", fake_ready)
+    monkeypatch.setattr(runtime_module.subprocess, "Popen", raise_oserror)
+
+    embedder = build_embedder_from_env(default_provider="simple")
+
+    assert isinstance(embedder, OllamaEmbeddingProvider)
+
+
+def test_build_embedder_from_env_malformed_ollama_url_does_not_autostart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MNEMOS_EMBEDDING_PROVIDER", "ollama")
+    monkeypatch.setenv("MNEMOS_OLLAMA_URL", "http:///no-host")
+
+    popen_called = {"value": False}
+
+    def fail_popen(*_args: object, **_kwargs: object) -> None:
+        popen_called["value"] = True
+        raise AssertionError("autostart should not run for malformed ollama URLs")
+
+    monkeypatch.setattr(runtime_module.subprocess, "Popen", fail_popen)
+
+    embedder = build_embedder_from_env(default_provider="simple")
+
+    assert isinstance(embedder, OllamaEmbeddingProvider)
+    assert not popen_called["value"]
+
+
+def test_build_llm_from_env_attempts_local_ollama_autostart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MNEMOS_LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("MNEMOS_OLLAMA_URL", "http://127.0.0.1:11434")
+
+    popen_calls: list[list[str]] = []
+
+    def fake_tcp_ready(_base_url: str, *, timeout: float = 0.2) -> bool:
+        return False
+
+    class _DummyPopen:
+        def __init__(self, args: list[str]) -> None:
+            popen_calls.append(args)
+
+    def fake_popen(args: list[str], **_kwargs: object) -> _DummyPopen:
+        return _DummyPopen(args)
+
+    monkeypatch.setattr(runtime_module, "_ollama_tcp_ready", fake_tcp_ready)
+    monkeypatch.setattr(runtime_module.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(runtime_module.time, "sleep", lambda _seconds: None)
+    monotonic_state = {"now": 0.0}
+
+    def fake_monotonic() -> float:
+        monotonic_state["now"] += 0.5
+        return monotonic_state["now"]
+
+    monkeypatch.setattr(runtime_module.time, "monotonic", fake_monotonic)
+
+    llm = build_llm_from_env()
+
+    assert isinstance(llm, OllamaProvider)
+    assert popen_calls == [["ollama", "serve"]]
+
+
+def test_build_llm_from_env_does_not_autostart_remote_ollama(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MNEMOS_LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("MNEMOS_OLLAMA_URL", "http://10.0.0.5:11434")
+
+    popen_called = {"value": False}
+
+    def fail_popen(*_args: object, **_kwargs: object) -> None:
+        popen_called["value"] = True
+        raise AssertionError("autostart should not run for remote ollama URLs")
+
+    monkeypatch.setattr(runtime_module.subprocess, "Popen", fail_popen)
+
+    llm = build_llm_from_env()
+
+    assert isinstance(llm, OllamaProvider)
+    assert not popen_called["value"]
 
 
 def test_build_store_from_env_rejects_legacy_store_types(

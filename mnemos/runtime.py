@@ -5,8 +5,12 @@ mnemos/runtime.py — Shared runtime settings and provider/store factories.
 from __future__ import annotations
 
 import os
+import socket
+import subprocess
+import time
 from pathlib import Path
 from typing import Literal, Mapping
+from urllib.parse import urlparse
 
 from pydantic import ValidationError
 
@@ -73,6 +77,72 @@ def _persistent_provider_api_key(provider: str) -> str | None:
     return None
 
 
+def _ollama_endpoint(base_url: str) -> tuple[str, int] | None:
+    parsed = urlparse(base_url if "://" in base_url else f"http://{base_url}")
+    host = parsed.hostname
+    if not host:
+        return None
+    return host, parsed.port or 11434
+
+
+def _is_local_ollama_url(base_url: str) -> bool:
+    endpoint = _ollama_endpoint(base_url)
+    if endpoint is None:
+        return False
+    host, _ = endpoint
+    return host in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+
+
+def _ollama_tcp_ready(base_url: str, *, timeout: float = 0.2) -> bool:
+    endpoint = _ollama_endpoint(base_url)
+    if endpoint is None:
+        return False
+    host, port = endpoint
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _ensure_local_ollama_running(base_url: str) -> None:
+    """
+    Best-effort local Ollama startup.
+
+    Only applies to loopback URLs so remote/self-hosted Ollama deployments are
+    never modified by Mnemos. If Ollama is already accepting TCP connections,
+    this is a no-op.
+    """
+    if not _is_local_ollama_url(base_url):
+        return
+
+    if _ollama_tcp_ready(base_url):
+        return
+
+    env = os.environ.copy()
+    env.setdefault("OLLAMA_HOST", base_url)
+
+    try:
+        subprocess.Popen(
+            ["ollama", "serve"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=env,
+            start_new_session=True,
+        )
+    except OSError:
+        # Keep runtime wiring non-fatal here; provider calls will still raise
+        # clear connection errors if startup is unavailable.
+        return
+
+    deadline = time.monotonic() + 3.0
+    while time.monotonic() < deadline:
+        if _ollama_tcp_ready(base_url):
+            return
+        time.sleep(0.1)
+
+
 def build_store_from_settings(settings: AppSettings) -> MemoryStore:
     store_type = settings.storage.type
 
@@ -92,9 +162,11 @@ def build_embedder_from_settings(settings: AppSettings) -> EmbeddingProvider:
         return SimpleEmbeddingProvider(dim=settings.embedding.dim)
 
     if provider == "ollama":
+        base_url = settings.base_url_for("ollama") or "http://localhost:11434"
+        _ensure_local_ollama_running(base_url)
         return OllamaEmbeddingProvider(
             model=settings.embedding.model or "nomic-embed-text",
-            base_url=settings.base_url_for("ollama") or "http://localhost:11434",
+            base_url=base_url,
         )
 
     if provider in {"openai", "openclaw", "openrouter"}:
@@ -126,8 +198,10 @@ def build_llm_from_settings(settings: AppSettings) -> LLMProvider:
         return MockLLMProvider()
 
     if provider == "ollama":
+        base_url = settings.base_url_for("ollama") or "http://localhost:11434"
+        _ensure_local_ollama_running(base_url)
         return OllamaProvider(
-            base_url=settings.base_url_for("ollama") or "http://localhost:11434",
+            base_url=base_url,
             model=settings.llm.model or "llama3",
         )
 
