@@ -125,6 +125,10 @@ body::before {
   gap: 20px;
 }
 
+.is-hidden {
+  display: none !important;
+}
+
 .span-2 {
   grid-column: span 2;
 }
@@ -341,6 +345,323 @@ small {
   padding: 16px;
 }
 
+.memory-detail-empty {
+  margin: 0 0 14px;
+  color: var(--muted);
+}
+
+.memory-graph {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.memory-graph-empty,
+.memory-graph-placeholder {
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px dashed rgba(15, 118, 110, 0.24);
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.memory-graph-root {
+  min-height: 100%;
+}
+
+.memory-flow-shell {
+  display: grid;
+  gap: 12px;
+  min-height: 100%;
+}
+
+.memory-flow-stage {
+  display: grid;
+  gap: 12px;
+  min-height: 100%;
+}
+
+.memory-flow-stage-fallback {
+  place-items: center;
+  padding: 20px;
+}
+
+.memory-flow-shell-unavailable {
+  min-height: auto;
+}
+
+.graph-summary {
+  display: grid;
+  gap: 6px;
+}
+
+.graph-status {
+  margin: 0;
+  font-weight: 700;
+}
+
+.graph-hint,
+.graph-empty-note,
+.graph-empty-state {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.graph-empty-note-inline {
+  padding: 0 4px;
+}
+
+.graph-stage {
+  position: relative;
+  min-height: 320px;
+  border-radius: 22px;
+  border: 1px solid rgba(15, 118, 110, 0.12);
+  background:
+    radial-gradient(circle at center, rgba(15, 118, 110, 0.08), transparent 38%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(244, 240, 232, 0.78));
+  overflow: hidden;
+}
+
+.graph-stage-inline {
+  min-height: 360px;
+}
+
+.graph-page {
+  margin-top: 12px;
+}
+
+.graph-page-card {
+  padding: 26px;
+}
+
+.graph-page-head {
+  margin-bottom: 14px;
+}
+
+.graph-stage-page {
+  min-height: 74vh;
+}
+
+.graph-stage-page .memory-flow {
+  min-height: 70vh;
+}
+
+.graph-stage-page .memory-flow-shell {
+  min-height: 100%;
+}
+
+.graph-stage-fallback {
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.memory-flow {
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
+}
+
+.graph-stage .vue-flow {
+  background: transparent;
+}
+
+.graph-stage .vue-flow__container {
+  background: transparent;
+}
+
+.graph-stage .vue-flow__pane {
+  cursor: default;
+  z-index: 0;
+}
+
+.graph-stage .vue-flow__viewport,
+.graph-stage .vue-flow__transformationpane,
+.graph-stage .vue-flow__nodes {
+  pointer-events: auto;
+}
+
+.graph-stage .vue-flow__edges,
+.graph-stage .vue-flow__edge-labels {
+  pointer-events: none;
+  z-index: 1;
+}
+
+.graph-stage .vue-flow__nodes {
+  z-index: 3;
+}
+
+.graph-stage .vue-flow__edge-labels {
+  z-index: 2;
+}
+
+.graph-stage .vue-flow__edge-path {
+  stroke: rgba(15, 118, 110, 0.46);
+  stroke-linecap: round;
+}
+
+.graph-stage .vue-flow__edge.selected .vue-flow__edge-path,
+.graph-stage .vue-flow__edge:focus .vue-flow__edge-path,
+.graph-stage .vue-flow__edge:focus-visible .vue-flow__edge-path {
+  stroke: rgba(15, 118, 110, 0.92);
+}
+
+.graph-stage .vue-flow__node {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  pointer-events: auto;
+  max-width: none;
+}
+
+.graph-stage .vue-flow__handle {
+  pointer-events: none;
+}
+
+.graph-stage .vue-flow__nodesselection-rect,
+.graph-stage .vue-flow__connection,
+.graph-stage .vue-flow__attribution {
+  display: none;
+}
+
+.graph-stage .vue-flow__viewport {
+  overflow: visible;
+}
+
+.graph-stage .vue-flow__transformationpane {
+  transform-origin: 0 0;
+}
+
+.memory-flow-node {
+  position: relative;
+  pointer-events: auto;
+  display: grid;
+  gap: 0;
+  max-width: 100%;
+}
+
+.memory-flow-node-card,
+.memory-flow-fallback-center {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  border: 1px solid rgba(15, 118, 110, 0.16);
+  border-radius: 20px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--ink);
+  box-shadow: 0 10px 24px rgba(24, 30, 26, 0.08);
+  text-align: left;
+  overflow: hidden;
+}
+
+.memory-flow-node-card-compact {
+  min-width: 148px;
+  max-width: 190px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  gap: 2px;
+}
+
+.memory-flow-node-card-compact .graph-node-id {
+  font-size: 0.8rem;
+  line-height: 1.3;
+}
+
+.memory-flow-node-card-compact .graph-node-kicker {
+  margin: 0;
+  font-size: 0.58rem;
+  letter-spacing: 0.09em;
+}
+
+.memory-flow-node-card {
+  cursor: pointer;
+  user-select: none;
+}
+
+.memory-flow-node-card:hover,
+.memory-flow-node-card:focus-visible {
+  border-color: rgba(15, 118, 110, 0.42);
+  box-shadow: 0 16px 32px rgba(24, 30, 26, 0.12);
+  outline: none;
+}
+
+.memory-flow-node--center .memory-flow-node-card,
+.memory-flow-fallback-center {
+  border-color: rgba(15, 118, 110, 0.34);
+  background: linear-gradient(135deg, rgba(15, 118, 110, 0.12), rgba(255, 255, 255, 0.96));
+}
+
+.memory-flow-node--neighbor .memory-flow-node-card {
+  border-color: rgba(197, 110, 59, 0.22);
+}
+
+.memory-flow-node--center .memory-flow-node-card {
+  box-shadow: 0 14px 34px rgba(24, 30, 26, 0.14);
+}
+
+.memory-flow-node--neighbor .memory-flow-node-card {
+  box-shadow: 0 8px 18px rgba(24, 30, 26, 0.08);
+}
+
+.memory-flow-global .vue-flow__minimap {
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(15, 118, 110, 0.2);
+}
+
+.memory-flow-global .vue-flow__controls {
+  box-shadow: 0 8px 18px rgba(24, 30, 26, 0.12);
+}
+
+.graph-handle {
+  width: 10px !important;
+  height: 10px !important;
+  border: 0 !important;
+  background: transparent !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.graph-node-kicker {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+  margin-bottom: 2px;
+  pointer-events: none;
+}
+
+.graph-node-id,
+.graph-node-preview {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+}
+
+.graph-node-id {
+  font-size: 0.9rem;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.graph-node-preview {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  min-height: 2.9em;
+  pointer-events: none;
+}
+
+.graph-stage-fallback .memory-flow-fallback-center {
+  width: min(100%, 320px);
+}
+
 .detail-section + .detail-section {
   margin-top: 16px;
 }
@@ -358,12 +679,6 @@ small {
   padding-top: 10px;
 }
 
-@media (max-width: 980px) {
-  .memory-browser {
-    grid-template-columns: 1fr;
-  }
-}
-
 @media (max-width: 1080px) {
   .hero,
   .grid {
@@ -372,6 +687,16 @@ small {
 
   .span-2 {
     grid-column: auto;
+  }
+}
+
+@media (max-width: 980px) {
+  .memory-browser {
+    grid-template-columns: 1fr;
+  }
+
+  .graph-stage {
+    min-height: 360px;
   }
 }
 
@@ -391,5 +716,20 @@ small {
 
   .section-head {
     flex-direction: column;
+  }
+
+  .graph-stage {
+    min-height: 280px;
+    padding: 12px;
+  }
+
+  .memory-flow,
+  .graph-stage-inline {
+    min-height: 280px;
+  }
+
+  .graph-stage .vue-flow__edges,
+  .graph-stage .vue-flow__edge-labels {
+    display: none;
   }
 }

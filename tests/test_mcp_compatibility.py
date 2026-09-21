@@ -63,6 +63,13 @@ def _server_params_from_spec(
         env[key] = _expand_template(str(value), env)
     env.update(env_overrides)
     command = _expand_template(str(spec["command"]), env)
+
+    # Tier-1 roundtrip tests should execute with the same interpreter as pytest
+    # so runtime dependencies are consistent across local/CI environments.
+    # Docs/config contract checks still verify the shipped command string separately.
+    if Path(command).name.lower() in {"python", "python3", "python.exe", "python3.exe"}:
+        command = sys.executable
+
     args = [_expand_template(str(arg), env) for arg in spec.get("args", [])]
     return StdioServerParameters(
         command=command,
@@ -188,7 +195,7 @@ async def test_tier1_claude_code_plugin_manifest_executes_real_roundtrip(tmp_pat
         cwd=ROOT,
         env_overrides={
             "CLAUDE_PLUGIN_ROOT": str(ROOT),
-            "MNEMOS_PLUGIN_PYTHON": "python",
+            "MNEMOS_PLUGIN_PYTHON": sys.executable,
             "MNEMOS_LLM_PROVIDER": "mock",
             "MNEMOS_EMBEDDING_PROVIDER": "simple",
             "MNEMOS_STORE_TYPE": "sqlite",

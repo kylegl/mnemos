@@ -15,3 +15,7 @@ Use Mnemos through MCP automatically on every substantial coding task in this re
 5. If a retrieved memory looks suspicious, call `mnemos_inspect` before storing a correction.
 6. Never store secrets, credentials, tokens, or one-off transient chatter.
 7. If Mnemos MCP tools are unavailable, continue normally without blocking work.
+
+## Source code references
+
+- [vue-flow source code](.agents/sources/vue-flow)

@@ -238,6 +238,60 @@ class ControlPlaneService:
             if callable(close):
                 close()
 
+    def get_memory_graph(self) -> dict[str, Any]:
+        resolved = self._resolved_settings()
+        store = build_store_from_settings(resolved.settings)
+        try:
+            chunks = sorted(store.get_all(), key=lambda chunk: chunk.updated_at, reverse=True)
+            chunk_ids = [chunk.id for chunk in chunks]
+            known_ids = set(chunk_ids)
+            edge_map = store.get_graph_edges(chunk_ids if chunk_ids else None)
+
+            nodes = [
+                {
+                    "id": chunk.id,
+                    "content": chunk.content,
+                    "scope": chunk.metadata.get("scope", "global"),
+                    "scope_id": chunk.metadata.get("scope_id"),
+                    "updated_at": chunk.updated_at.isoformat(),
+                    "access_count": chunk.access_count,
+                    "salience": round(float(chunk.salience), 4),
+                }
+                for chunk in chunks
+            ]
+
+            edges: list[dict[str, Any]] = []
+            seen_pairs: set[tuple[str, str]] = set()
+            for source_id, neighbors in edge_map.items():
+                if source_id not in known_ids:
+                    continue
+                for target_id, weight in neighbors.items():
+                    if target_id not in known_ids or source_id == target_id:
+                        continue
+                    pair = tuple(sorted((source_id, target_id)))
+                    if pair in seen_pairs:
+                        continue
+                    seen_pairs.add(pair)
+                    edges.append(
+                        {
+                            "id": f"e-{pair[0]}-{pair[1]}",
+                            "source": pair[0],
+                            "target": pair[1],
+                            "weight": round(float(weight), 4),
+                        }
+                    )
+
+            return {
+                "node_count": len(nodes),
+                "edge_count": len(edges),
+                "nodes": nodes,
+                "edges": edges,
+            }
+        finally:
+            close = getattr(store, "close", None)
+            if callable(close):
+                close()
+
     def run_smoke_tests(self) -> dict[str, Any]:
         async def _run() -> dict[str, Any]:
             resolved = self._resolved_settings()

@@ -129,6 +129,8 @@ class MnemosUiRouter:
             return self._json_response(self.service.health_report())
         if method == "GET" and path == "/api/memory":
             return self._json_response(self.service.get_memory_snapshot())
+        if method == "GET" and path == "/api/graph":
+            return self._json_response(self.service.get_memory_graph())
         if method == "GET" and path.startswith("/api/memory/"):
             chunk_id = path.removeprefix("/api/memory/")
             try:
